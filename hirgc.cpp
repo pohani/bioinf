@@ -29,51 +29,23 @@ public:
 
 class ReferenceIndex
 {
-    std::string fasta_path_;
-    size_t k_;
-    std::string reference_sequence_;
-    std::unordered_map<std::string, std::vector<size_t>> index_;
+    // as before
+};
+
+class Compressor
+{
+    const ReferenceIndex &refIndex_;
+    size_t min_match_;
 
 public:
-    ReferenceIndex(const std::string &fasta_path, size_t k = 28)
-        : fasta_path_(fasta_path), k_(k) {}
+    Compressor(const ReferenceIndex &refIndex, size_t min_match = 28)
+        : refIndex_(refIndex), min_match_(min_match) {}
 
-    bool load()
+    bool compress(const std::string &target_fasta, const std::string &output_file)
     {
-        std::ifstream in(fasta_path_);
-        if (!in)
-            return false;
-        std::string line;
-        while (std::getline(in, line))
-        {
-            if (line.empty() || line[0] == '>')
-                continue;
-            std::istringstream iss(line);
-            std::string chunk;
-            while (iss >> chunk)
-                reference_sequence_ += chunk;
-        }
-        if (reference_sequence_.empty())
-            return false;
-
-        size_t n = reference_sequence_.size();
-        for (size_t i = 0; i + k_ <= n; ++i)
-        {
-            std::string kmer = reference_sequence_.substr(i, k_);
-            index_[kmer].push_back(i);
-        }
-        return true;
+        // to be implemented
+        return false;
     }
-
-    const std::vector<size_t> &query(const std::string &kmer) const
-    {
-        static const std::vector<size_t> empty;
-        auto it = index_.find(kmer);
-        return it == index_.end() ? empty : it->second;
-    }
-
-    size_t kmer_size() const { return k_; }
-    const std::string &sequence() const { return reference_sequence_; }
 };
 
 int main(int argc, char *argv[])
@@ -87,7 +59,32 @@ int main(int argc, char *argv[])
     }
 
     std::string mode = argv[1];
-    // remaining logic to be implemented
+    std::string ref_path = argv[2];
+    ReferenceIndex idx(ref_path);
+    if (!idx.load())
+    {
+        std::cerr << "Failed to load reference: " << ref_path << std::endl;
+        return 1;
+    }
+
+    if (mode == "compress")
+    {
+        Compressor comp(idx);
+        if (!comp.compress(argv[3], argv[4]))
+        {
+            std::cerr << "Compression failed" << std::endl;
+            return 1;
+        }
+    }
+    else if (mode == "decompress")
+    {
+        // decompress logic to be implemented
+    }
+    else
+    {
+        std::cerr << "Unknown mode: " << mode << std::endl;
+        return 1;
+    }
 
     return 0;
 }
