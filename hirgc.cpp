@@ -2,8 +2,10 @@
 
 #include <iostream>
 #include <fstream>
+#include <sstream>
 #include <string>
 #include <vector>
+#include <unordered_map>
 #include <cstdint>
 
 struct Command {
@@ -15,39 +17,32 @@ struct Command {
 
 class EntropyCoder {
 public:
-    void encode(const std::vector<Command>& commands, std::ostream& os) {
-        uint64_t count = commands.size();
-        os.write(reinterpret_cast<const char*>(&count), sizeof(count));
-        for (const auto& cmd : commands) {
-            uint8_t t = static_cast<uint8_t>(cmd.type);
-            os.write(reinterpret_cast<const char*>(&t), 1);
-            os.write(reinterpret_cast<const char*>(&cmd.pos), sizeof(cmd.pos));
-            os.write(reinterpret_cast<const char*>(&cmd.length), sizeof(cmd.length));
-            if (cmd.type == Command::LITERAL) {
-                os.write(cmd.literals.data(), cmd.literals.size());
-            }
-        }
+    void encode(const std::vector<Command>& commands, std::ostream& os) { /* … */ }
+    void decode(std::istream& is, std::vector<Command>& commands) { /* … */ }
+};
+
+class ReferenceIndex {
+    std::string fasta_path_;
+    size_t k_;
+    std::string reference_sequence_;
+    std::unordered_map<std::string, std::vector<size_t>> index_;
+
+public:
+    ReferenceIndex(const std::string& fasta_path, size_t k = 28)
+        : fasta_path_(fasta_path), k_(k) {}
+
+    bool load() {
+        // to be implemented
+        return false;
     }
 
-    void decode(std::istream& is, std::vector<Command>& commands) {
-        uint64_t count;
-        is.read(reinterpret_cast<char*>(&count), sizeof(count));
-        commands.clear();
-        commands.reserve(count);
-        for (uint64_t i = 0; i < count; ++i) {
-            uint8_t t;
-            is.read(reinterpret_cast<char*>(&t), 1);
-            Command cmd;
-            cmd.type = static_cast<Command::Type>(t);
-            is.read(reinterpret_cast<char*>(&cmd.pos), sizeof(cmd.pos));
-            is.read(reinterpret_cast<char*>(&cmd.length), sizeof(cmd.length));
-            if (cmd.type == Command::LITERAL) {
-                cmd.literals.resize(cmd.length);
-                is.read(&cmd.literals[0], cmd.length);
-            }
-            commands.push_back(cmd);
-        }
+    const std::vector<size_t>& query(const std::string& kmer) const {
+        static const std::vector<size_t> empty;
+        return empty;
     }
+
+    size_t kmer_size() const { return k_; }
+    const std::string& sequence() const { return reference_sequence_; }
 };
 
 int main(int argc, char* argv[]) {
@@ -59,14 +54,7 @@ int main(int argc, char* argv[]) {
     }
 
     std::string mode = argv[1];
-    if (mode == "compress") {
-        // compress logic to be implemented
-    } else if (mode == "decompress") {
-        // decompress logic to be implemented
-    } else {
-        std::cerr << "Unknown mode: " << mode << std::endl;
-        return 1;
-    }
+    // reference loading and compress/decompress logic to be implemented
 
     return 0;
 }
