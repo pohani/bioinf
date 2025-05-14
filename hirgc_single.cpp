@@ -9,11 +9,9 @@
 #include <unordered_map>
 #include <vector>
 
-// -------------------------------------------------------------------------------------------------
 // GenomeCommand
 // Represents a single instruction: either copy from reference or emit a literal.
 // Written by Karlo Pohajda.
-// -------------------------------------------------------------------------------------------------
 struct GenomeCommand
 {
     enum class Kind
@@ -26,19 +24,15 @@ struct GenomeCommand
     std::string literalSeq; ///< Sequence to output if Kind::Literal.
 };
 
-// -------------------------------------------------------------------------------------------------
 // EntropyProcessor
 // Handles binary serialization and deserialization of GenomeCommand streams.
 // Written by Karlo Pohajda.
-// -------------------------------------------------------------------------------------------------
 class EntropyProcessor
 {
 public:
-    // -------------------------------------------------------------------------------------------------
     // encode
     // Serialize a sequence of commands into a binary stream.
     // Written by Karlo Pohajda.
-    // -------------------------------------------------------------------------------------------------
     void encode(const std::vector<GenomeCommand> &cmds, std::ostream &os)
     {
         uint64_t total = cmds.size();
@@ -57,11 +51,9 @@ public:
         }
     }
 
-    // -------------------------------------------------------------------------------------------------
     // decode
     // Read back a sequence of commands from a binary stream.
     // Written by Karlo Pohajda.
-    // -------------------------------------------------------------------------------------------------
     void decode(std::istream &is, std::vector<GenomeCommand> &cmds)
     {
         uint64_t total = 0;
@@ -89,31 +81,25 @@ public:
     }
 };
 
-// -------------------------------------------------------------------------------------------------
 // ReferenceIndexer
 // Loads a reference FASTA and builds a k-mer to positions index.
 // Written by Karlo Pohajda.
-// -------------------------------------------------------------------------------------------------
 class ReferenceIndexer
 {
 public:
-    // -------------------------------------------------------------------------------------------------
     // Constructor
     // pathToFasta: file path of the reference FASTA
     // kmerSize: length of k-mers for indexing
     // Written by Karlo Pohajda.
-    // -------------------------------------------------------------------------------------------------
     ReferenceIndexer(std::string pathToFasta, size_t kmerSize = 28)
         : m_fastaPath(std::move(pathToFasta)), m_kmerSize(kmerSize)
     {
     }
 
-    // -------------------------------------------------------------------------------------------------
     // buildIndex
     // Loads the FASTA, concatenates sequences, and builds the k-mer index.
     // Returns true on success.
     // Written by Karlo Pohajda.
-    // -------------------------------------------------------------------------------------------------
     bool buildIndex()
     {
         std::ifstream in(m_fastaPath);
@@ -147,11 +133,9 @@ public:
         return true;
     }
 
-    // -------------------------------------------------------------------------------------------------
     // queryPositions
     // Returns all start positions in the reference matching the given k-mer.
     // Written by Karlo Pohajda.
-    // -------------------------------------------------------------------------------------------------
     const std::vector<size_t> &queryPositions(const std::string &kmer) const
     {
         static const std::vector<size_t> empty;
@@ -159,18 +143,14 @@ public:
         return (it == m_index.end() ? empty : it->second);
     }
 
-    // -------------------------------------------------------------------------------------------------
     // getKmerSize
     // Returns the k-mer length used for indexing.
     // Written by Karlo Pohajda.
-    // -------------------------------------------------------------------------------------------------
     size_t getKmerSize() const { return m_kmerSize; }
 
-    // -------------------------------------------------------------------------------------------------
     // getReference
     // Returns the full concatenated reference sequence.
     // Written by Karlo Pohajda.
-    // -------------------------------------------------------------------------------------------------
     const std::string &getReference() const { return m_referenceSeq; }
 
 private:
@@ -180,31 +160,25 @@ private:
     std::unordered_map<std::string, std::vector<size_t>> m_index;
 };
 
-// -------------------------------------------------------------------------------------------------
 // GenomeCompressor
 // Produces a compressed binary representation of a target genome using a reference.
 // Written by Karlo Pohajda.
-// -------------------------------------------------------------------------------------------------
 class GenomeCompressor
 {
 public:
-    // -------------------------------------------------------------------------------------------------
     // Constructor
     // refIndexer: loaded reference index
     // minMatch: minimal match length to emit as COPY
     // Written by Karlo Pohajda.
-    // -------------------------------------------------------------------------------------------------
     GenomeCompressor(const ReferenceIndexer &refIndexer, size_t minMatch = 28)
         : m_refIndexer(refIndexer), m_minMatch(minMatch)
     {
     }
 
-    // -------------------------------------------------------------------------------------------------
     // compress
     // Reads target FASTA, generates copy/literal commands, and writes binary to outFile.
     // Returns true on success.
     // Written by Karlo Pohajda.
-    // -------------------------------------------------------------------------------------------------
     bool compress(const std::string &targetFasta, const std::string &outFile)
     {
         std::ifstream in(targetFasta);
@@ -286,30 +260,24 @@ private:
     size_t m_minMatch;
 };
 
-// -------------------------------------------------------------------------------------------------
 // GenomeDecompressor
 // Reconstructs the target genome fasta from compressed binary and reference.
 // Written by Karlo Pohajda.
-// -------------------------------------------------------------------------------------------------
 class GenomeDecompressor
 {
 public:
-    // -------------------------------------------------------------------------------------------------
     // Constructor
     // refIndexer: loaded reference index
     // Written by Karlo Pohajda.
-    // -------------------------------------------------------------------------------------------------
     GenomeDecompressor(const ReferenceIndexer &refIndexer)
         : m_refIndexer(refIndexer)
     {
     }
 
-    // -------------------------------------------------------------------------------------------------
     // decompress
     // Reads binary commands, reconstructs sequence, and writes FASTA to outFasta.
     // Returns true on success.
     // Written by Karlo Pohajda.
-    // -------------------------------------------------------------------------------------------------
     bool decompress(const std::string &inFile, const std::string &outFasta)
     {
         std::ifstream in(inFile, std::ios::binary);
@@ -356,11 +324,9 @@ private:
     const ReferenceIndexer &m_refIndexer;
 };
 
-// -------------------------------------------------------------------------------------------------
 // main
 // Parses command-line arguments and dispatches compression or decompression.
 // Written by Karlo Pohajda.
-// -------------------------------------------------------------------------------------------------
 int main(int argc, char *argv[])
 {
     if (argc != 5)
