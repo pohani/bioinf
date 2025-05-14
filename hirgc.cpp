@@ -3,6 +3,25 @@
 #include <iostream>
 #include <fstream>
 #include <string>
+#include <vector>
+
+struct Command {
+    enum Type { COPY = 0, LITERAL = 1 } type;
+    size_t pos;
+    size_t length;
+    std::string literals;
+};
+
+class EntropyCoder {
+public:
+    void encode(const std::vector<Command>& commands, std::ostream& os) {
+        // to be implemented
+    }
+
+    void decode(std::istream& is, std::vector<Command>& commands) {
+        // to be implemented
+    }
+};
 
 int main(int argc, char* argv[]) {
     if (argc < 5) {
