@@ -140,8 +140,9 @@ public:
         size_t N = m_referenceSeq.size();
         for (size_t i = 0; i + m_kmerSize <= N; ++i)
         {
-            std::string_view kmer(&m_referenceSeq[i], m_kmerSize);
-            m_index[std::string(kmer)].push_back(i);
+            // Replace string_view with substr for compatibility
+            std::string kmer = m_referenceSeq.substr(i, m_kmerSize);
+            m_index[kmer].push_back(i);
         }
         return true;
     }
@@ -239,8 +240,9 @@ public:
 
             if (i + k <= N)
             {
-                std::string_view kmer(&targetSeq[i], k);
-                for (size_t pos : m_refIndexer.queryPositions(std::string(kmer)))
+                // Replace string_view with substr for compatibility
+                std::string kmer = targetSeq.substr(i, k);
+                for (size_t pos : m_refIndexer.queryPositions(kmer))
                 {
                     size_t len = 0;
                     while (i + len < N && pos + len < refSeq.size() && targetSeq[i + len] == refSeq[pos + len])
