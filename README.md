@@ -36,13 +36,6 @@ A tool for compressing and decompressing genome sequences.
 
 ## Usage
 
-### Running the Program
-
-To start the program:
-```bash
-./hirgc
-```
-
 ### Compression
 
 To compress a genome sequence:
