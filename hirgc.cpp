@@ -28,7 +28,14 @@ std::vector<char> decompressedSequence;
 
 // Configuration parameters
 int basesPerLine = 80;
-std::vector<std::pair<int, int>> ambiguousBaseIntervals;
+
+struct AmbiguousInterval
+{
+    int start;  // 0‐based position in the original FASTA (counting only valid bases)
+    int length; // how many consecutive ambiguous bases
+    char base;  // exactly which IUPAC letter (‘N’, ‘R’, ‘Y’, …) to restore
+};
+static std::vector<AmbiguousInterval> ambiguousBaseIntervals;
 
 // Hash table parameters for k-mer indexing
 static constexpr int MAX_HASH_SIZE = 1 << 20;
@@ -182,7 +189,7 @@ void scanAmbiguousBases(const std::string &targetFile)
     std::ifstream in(targetFile);
     if (!in.is_open())
     {
-        std::cerr << "Error: could not open target file for N-scanning: "
+        std::cerr << "Error: could not open target file for N‐scanning: "
                   << targetFile << std::endl;
         return;
     }
@@ -195,50 +202,100 @@ void scanAmbiguousBases(const std::string &targetFile)
     bool inAmbiguousRun = false;
     int runStart = 0;
     int runLength = 0;
+    char runChar = '\0'; // which IUPAC letter (‘N’, ‘R’, ‘Y’, …) is in this run
 
     while (std::getline(in, line))
     {
         for (char nucleotide : line)
         {
             char upperNucleotide = static_cast<char>(std::toupper(static_cast<unsigned char>(nucleotide)));
-            if (upperNucleotide == 'A' || upperNucleotide == 'C' || upperNucleotide == 'G' ||
-                upperNucleotide == 'T' || upperNucleotide == 'N')
+
+            // Only A, C, G, T, plus any of the IUPAC ambiguity codes:
+            if (upperNucleotide == 'A' || upperNucleotide == 'C' ||
+                upperNucleotide == 'G' || upperNucleotide == 'T' ||
+                upperNucleotide == 'N' || upperNucleotide == 'R' ||
+                upperNucleotide == 'Y' || upperNucleotide == 'S' ||
+                upperNucleotide == 'W' || upperNucleotide == 'K' ||
+                upperNucleotide == 'M' || upperNucleotide == 'B' ||
+                upperNucleotide == 'D' || upperNucleotide == 'H' ||
+                upperNucleotide == 'V')
             {
-                if (upperNucleotide == 'N')
+                // Is this letter one of the “ambiguous” codes?
+                bool isAmbiguous = (upperNucleotide == 'N' ||
+                                    upperNucleotide == 'R' ||
+                                    upperNucleotide == 'Y' ||
+                                    upperNucleotide == 'S' ||
+                                    upperNucleotide == 'W' ||
+                                    upperNucleotide == 'K' ||
+                                    upperNucleotide == 'M' ||
+                                    upperNucleotide == 'B' ||
+                                    upperNucleotide == 'D' ||
+                                    upperNucleotide == 'H' ||
+                                    upperNucleotide == 'V');
+
+                if (isAmbiguous)
                 {
                     if (!inAmbiguousRun)
                     {
+                        // start a new run of ambiguous bases
                         inAmbiguousRun = true;
                         runStart = position;
                         runLength = 1;
+                        runChar = upperNucleotide;
                     }
                     else
                     {
-                        ++runLength;
+                        // we are already in a run—check if the letter is the same
+                        if (upperNucleotide == runChar)
+                        {
+                            // continuing the same ambiguous‐letter run
+                            ++runLength;
+                        }
+                        else
+                        {
+                            // the ambiguous letter changed, so close the old run…
+                            ambiguousBaseIntervals.push_back(
+                                AmbiguousInterval{runStart, runLength, runChar});
+                            // …and start a new run with this new letter
+                            runStart = position;
+                            runLength = 1;
+                            runChar = upperNucleotide;
+                        }
                     }
                 }
                 else
                 {
+                    // it’s A/C/G/T. If we were in an ambiguous run, close it now.
                     if (inAmbiguousRun)
                     {
-                        ambiguousBaseIntervals.emplace_back(runStart, runLength);
+                        ambiguousBaseIntervals.push_back(
+                            AmbiguousInterval{runStart, runLength, runChar});
                         inAmbiguousRun = false;
                     }
+                    // (nothing else to do for A/C/G/T except advance position)
                 }
-                ++position;
+
+                ++position; // count this base toward the “genome coordinate”
             }
+            // else—some other character (e.g. FASTA header, whitespace)—skip entirely
         }
     }
+
+    // If file ended while still in a run of ambiguous bases, close it out:
     if (inAmbiguousRun)
     {
-        ambiguousBaseIntervals.emplace_back(runStart, runLength);
+        ambiguousBaseIntervals.push_back(
+            AmbiguousInterval{runStart, runLength, runChar});
     }
 
-    std::cout << "Found " << ambiguousBaseIntervals.size() << " N-intervals" << std::endl;
+    std::cout << "Found " << ambiguousBaseIntervals.size()
+              << " ambiguous‐base intervals" << std::endl;
     if (!ambiguousBaseIntervals.empty())
     {
-        std::cout << "First interval: start=" << ambiguousBaseIntervals[0].first
-                  << ", length=" << ambiguousBaseIntervals[0].second << std::endl;
+        const auto &first = ambiguousBaseIntervals[0];
+        std::cout << "First interval: start=" << first.start
+                  << ", length=" << first.length
+                  << ", base=" << first.base << std::endl;
     }
 }
 
@@ -346,14 +403,17 @@ void findMatches(const std::string &outputFile)
     out.write(sequenceMetadata.c_str(), metadataLength);
 
     uint32_t ambiguousCount = static_cast<uint32_t>(ambiguousBaseIntervals.size());
-    out.write(reinterpret_cast<char *>(&ambiguousCount), 4);
+    out.write(reinterpret_cast<const char *>(&ambiguousCount), 4);
 
     for (const auto &interval : ambiguousBaseIntervals)
     {
-        uint32_t start = static_cast<uint32_t>(interval.first);
-        uint32_t length = static_cast<uint32_t>(interval.second);
-        out.write(reinterpret_cast<char *>(&start), 4);
-        out.write(reinterpret_cast<char *>(&length), 4);
+        uint32_t start = static_cast<uint32_t>(interval.start);
+        uint32_t length = static_cast<uint32_t>(interval.length);
+        char base = interval.base; // ASCII letter (‘N’, ‘R’, etc.)
+
+        out.write(reinterpret_cast<const char *>(&start), 4);
+        out.write(reinterpret_cast<const char *>(&length), 4);
+        out.write(&base, 1);
     }
 
     int targetLength = static_cast<int>(targetSequence.size());
@@ -788,7 +848,9 @@ void validateDecompressedGenome(const std::string &targetFile, const std::string
  *
  * Written by Karlo Pohajda
  */
-void decompressGenome(const std::string &referenceFile, const std::string &inputFile, const std::string &outputFile)
+void decompressGenome(const std::string &referenceFile,
+                      const std::string &inputFile,
+                      const std::string &outputFile)
 {
     loadReferenceGenome(referenceFile);
 
@@ -799,7 +861,6 @@ void decompressGenome(const std::string &referenceFile, const std::string &input
         return;
     }
 
-    // Read sequence metadata
     uint32_t metadataLength;
     in.read(reinterpret_cast<char *>(&metadataLength), 4);
     std::vector<char> metadataBuffer(metadataLength);
@@ -810,24 +871,28 @@ void decompressGenome(const std::string &referenceFile, const std::string &input
     uint32_t ambiguousCount;
     in.read(reinterpret_cast<char *>(&ambiguousCount), 4);
 
-    std::cout << "Reading " << ambiguousCount << " N intervals from compressed file" << std::endl;
-
     for (uint32_t i = 0; i < ambiguousCount; ++i)
     {
         uint32_t start, length;
+        char baseChar;
+
         in.read(reinterpret_cast<char *>(&start), 4);
         in.read(reinterpret_cast<char *>(&length), 4);
-        ambiguousBaseIntervals.emplace_back(start, length);
+        in.read(&baseChar, 1); // single ASCII letter: ’N’, ’R’, etc.
+
+        ambiguousBaseIntervals.push_back(
+            AmbiguousInterval{static_cast<int>(start),
+                              static_cast<int>(length),
+                              baseChar});
     }
 
     decompressedSequence.clear();
     int32_t currentPos = 0;
     int32_t lastRefEnd = 0;
-
     int matchCount = 0;
     int literalCount = 0;
-    int totalMatchLength = 0;
-    int totalLiteralLength = 0;
+    int totalMatchLen = 0;
+    int totalLitLen = 0;
 
     while (true)
     {
@@ -841,40 +906,41 @@ void decompressGenome(const std::string &referenceFile, const std::string &input
             in.read(reinterpret_cast<char *>(&length), 4);
             std::vector<char> buffer(length);
             in.read(buffer.data(), length);
-            decompressedSequence.insert(decompressedSequence.end(), buffer.begin(), buffer.end());
+            decompressedSequence.insert(
+                decompressedSequence.end(),
+                buffer.begin(), buffer.end());
             currentPos += static_cast<int32_t>(length);
-
-            literalCount++;
-            totalLiteralLength += length;
+            literalCount += 1;
+            totalLitLen += length;
         }
         else if (tag == 0x01)
         {
             int32_t offset;
-            uint32_t matchLength;
+            uint32_t mLen;
             in.read(reinterpret_cast<char *>(&offset), 4);
-            in.read(reinterpret_cast<char *>(&matchLength), 4);
+            in.read(reinterpret_cast<char *>(&mLen), 4);
 
-            int32_t totalMatchLength = static_cast<int32_t>(matchLength) + K_MER_LENGTH;
-
+            int32_t fullMatchLen = static_cast<int32_t>(mLen) + K_MER_LENGTH;
             int32_t refPos = lastRefEnd + offset;
 
             if (refPos < 0 ||
-                refPos + totalMatchLength > static_cast<int32_t>(referenceSequence.size()))
+                refPos + fullMatchLen > static_cast<int32_t>(referenceSequence.size()))
             {
                 std::cerr << "Decompress error: invalid ref_pos="
-                          << refPos << " match_len=" << totalMatchLength
+                          << refPos << " match_len=" << fullMatchLen
                           << " (ref size=" << referenceSequence.size() << ")\n";
                 std::exit(1);
             }
 
-            for (int32_t k = 0; k < totalMatchLength; ++k)
-                decompressedSequence.push_back(referenceSequence[refPos + k]);
-            currentPos += totalMatchLength;
-
-            lastRefEnd = refPos + totalMatchLength;
-
-            matchCount++;
-            totalMatchLength += totalMatchLength;
+            for (int32_t k = 0; k < fullMatchLen; ++k)
+            {
+                decompressedSequence.push_back(
+                    referenceSequence[refPos + k]);
+            }
+            currentPos += fullMatchLen;
+            lastRefEnd = refPos + fullMatchLen;
+            matchCount += 1;
+            totalMatchLen += fullMatchLen;
         }
         else
         {
@@ -883,44 +949,49 @@ void decompressGenome(const std::string &referenceFile, const std::string &input
         }
     }
 
-    std::cout << "Decompression stats: " << matchCount << " matches, "
-              << literalCount << " literals\n";
-    std::cout << "Match bytes: " << totalMatchLength
-              << ", Literal bytes: " << totalLiteralLength << "\n";
+    std::cout << "Decompression stats: " << matchCount
+              << " matches, " << literalCount << " literals\n";
+    std::cout << "Match bytes: " << totalMatchLen
+              << ", Literal bytes: " << totalLitLen << "\n";
 
-    if (!ambiguousBaseIntervals.empty())
+    int totalAmbiguousBases = 0;
+    for (const auto &interval : ambiguousBaseIntervals)
+        totalAmbiguousBases += interval.length;
+
+    std::string textSequence;
+    textSequence.reserve(decompressedSequence.size() + totalAmbiguousBases);
+
+    size_t currentIndex = 0;
+    size_t insertedAmbiguous = 0;
+
+    for (const auto &interval : ambiguousBaseIntervals)
     {
-        std::cout << "Inserting " << ambiguousBaseIntervals.size() << " N intervals into decompressed sequence" << std::endl;
+        int originalStart = interval.start;
+        int length = interval.length;
+        char baseChar = interval.base; // e.g. 'R', 'Y', …
 
-        std::vector<char> sequenceWithAmbiguous;
-        sequenceWithAmbiguous.reserve(decompressedSequence.size() + 1000);
+        int adjustedStart = originalStart - static_cast<int>(insertedAmbiguous);
 
-        size_t currentIndex = 0;
-        size_t insertedAmbiguous = 0;
-
-        for (const auto &interval : ambiguousBaseIntervals)
+        while (currentIndex < decompressedSequence.size() &&
+               static_cast<int>(currentIndex) < adjustedStart)
         {
-            int originalStart = interval.first;
-            int length = interval.second;
-
-            int adjustedStart = originalStart - static_cast<int>(insertedAmbiguous);
-
-            while (currentIndex < decompressedSequence.size() &&
-                   static_cast<int>(currentIndex) < adjustedStart)
-            {
-                sequenceWithAmbiguous.push_back(decompressedSequence[currentIndex++]);
-            }
-
-            for (int i = 0; i < length; ++i)
-                sequenceWithAmbiguous.push_back(4);
-
-            insertedAmbiguous += length;
+            char letter = nucleotideMap[static_cast<unsigned char>(decompressedSequence[currentIndex])];
+            textSequence.push_back(letter);
+            ++currentIndex;
         }
 
-        while (currentIndex < decompressedSequence.size())
-            sequenceWithAmbiguous.push_back(decompressedSequence[currentIndex++]);
+        for (int i = 0; i < length; ++i)
+        {
+            textSequence.push_back(baseChar);
+        }
+        insertedAmbiguous += length;
+    }
 
-        decompressedSequence = std::move(sequenceWithAmbiguous);
+    while (currentIndex < decompressedSequence.size())
+    {
+        char letter = nucleotideMap[static_cast<unsigned char>(decompressedSequence[currentIndex])];
+        textSequence.push_back(letter);
+        ++currentIndex;
     }
 
     std::ofstream out(outputFile);
@@ -931,13 +1002,11 @@ void decompressGenome(const std::string &referenceFile, const std::string &input
     }
     out << decompressedMetadata << "\n";
 
-    const char extendedNucleotideMap[5] = {'A', 'C', 'G', 'T', 'N'};
-
     int column = 0;
-    for (size_t i = 0; i < decompressedSequence.size(); ++i)
+    for (size_t i = 0; i < textSequence.size(); ++i)
     {
-        out << extendedNucleotideMap[static_cast<unsigned char>(decompressedSequence[i])];
-        if (++column == basesPerLine && i < decompressedSequence.size() - 1)
+        out << textSequence[i];
+        if (++column == basesPerLine && i < textSequence.size() - 1)
         {
             out << '\n';
             column = 0;
@@ -945,7 +1014,7 @@ void decompressGenome(const std::string &referenceFile, const std::string &input
     }
 
     std::cout << "[decompress] wrote "
-              << decompressedSequence.size() << " bases to "
+              << textSequence.size() << " bases (including ambiguous) to "
               << outputFile << "\n";
 }
 

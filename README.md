@@ -50,6 +50,7 @@ Example:
 
 ### Decompression
 
+
 To decompress a compressed genome:
 ```bash
 ./hirgc decompress <reference_file> <compressed_file> <output_file>
@@ -67,3 +68,5 @@ Example:
 - `compressed.bin`: Output compressed file
 - `decompressed.fa`: Output decompressed file
 
+## Credits
+This repository builds upon the architecture and implementation provided in HiRGC (https://github.com/yuansliu/HiRGC). Significant portions of the code and ideas were adapted from that project.
